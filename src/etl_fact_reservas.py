@@ -65,16 +65,17 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
 
-    # Llaves dimensionales
+    # Llaves dimensionales — se deja NaN para codigos sin match en dimension
+    # Los registros con NaN en FKs criticas seran descartados antes del INSERT
     if "fllega_aco" in df.columns:
         df["id_fecha"] = pd.to_numeric(
             df["fllega_aco"].dt.strftime("%Y%m%d"), errors="coerce"
-        ).fillna(0).astype(int)
+        )  # NaT → NaN (sin fechas validas no hay clave de fecha)
 
-    df["id_segmento"]   = df.get("codsegmento", pd.Series()).map(maps["seg"]).fillna(0).astype(int)
-    df["id_canal"]      = df.get("codiga_age",  pd.Series()).map(maps["canal"]).fillna(0).astype(int)
-    df["id_habitacion"] = df.get("tiphab_tip",  pd.Series()).map(maps["hab"]).fillna(0).astype(int)
-    df["id_temporada"]  = df.get("codigotemporada", pd.Series()).map(maps["temp"]).fillna(99).astype(int)
+    df["id_segmento"]   = df.get("codsegmento",      pd.Series(dtype=object)).map(maps["seg"])
+    df["id_canal"]      = df.get("codiga_age",        pd.Series(dtype=object)).map(maps["canal"])
+    df["id_habitacion"] = df.get("tiphab_tip",        pd.Series(dtype=object)).map(maps["hab"])
+    df["id_temporada"]  = df.get("codigotemporada",   pd.Series(dtype=object)).map(maps["temp"])
 
     # id_huesped anonimizado
     id_col = "ident_aco" if "ident_aco" in df.columns else None
@@ -115,7 +116,27 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
                 "id_temporada", "id_huesped"]
     med_cols = [c for c in MEDIDAS if c in df.columns]
     fact = df[fk_cols + med_cols].copy()
+
+    # --- Filtro de integridad referencial (Kimball: descartar orphan facts) ---
+    # Columnas de FK numericas que deben tener un match valido en su dimension
+    fks_criticas = ["id_fecha", "id_segmento", "id_canal", "id_habitacion", "id_temporada"]
+    antes = len(fact)
+    mascara_invalida = fact[fks_criticas].isnull().any(axis=1)
+    n_invalidos = mascara_invalida.sum()
+    if n_invalidos > 0:
+        print(f"  ⚠️  {n_invalidos:,} registros sin FK valida excluidos "
+              f"({n_invalidos/antes:.1%} del total)")
+        # Diagnostico: que codigos de canal no tienen match en Dim_Canal
+        sin_canal = fact.loc[fact["id_canal"].isnull(), "id_canal"]
+        print(f"     Registros sin id_canal: {sin_canal.shape[0]:,}")
+        fact = fact[~mascara_invalida].copy()
+
+    # Cast a entero ahora que no hay NaN en las columnas FK
+    for col in fks_criticas:
+        fact[col] = fact[col].astype(int)
+
     fact.insert(0, "id_reserva", range(1, len(fact) + 1))
+    print(f"  ✅ Registros validos para insertar: {len(fact):,} / {antes:,}")
     return fact
 
 

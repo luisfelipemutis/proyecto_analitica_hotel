@@ -1,0 +1,18 @@
+FROM apache/airflow:2.9.2-python3.11
+
+USER root
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+COPY docker/requirements-docker.txt /requirements-docker.txt
+
+RUN pip install --no-cache-dir -r /requirements-docker.txt

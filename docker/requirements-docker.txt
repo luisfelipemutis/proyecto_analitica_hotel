@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+mlflow
+joblib
+python-dotenv
+openpyxl
+# ETL Kimball — conexión MySQL
+# NOTA: sqlalchemy NO se pina aquí. Airflow 2.9.2 gestiona su propia versión
+# compatible (1.4.x) y pinear sqlalchemy==2.x rompe el ORM interno de Airflow.
+mysql-connector-python==9.3.0

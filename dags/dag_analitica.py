@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
 dag_analitica.py
 DAG de Apache Airflow — Pipeline ETL Kimball - Hotel Dann Monasterio
@@ -5,6 +6,7 @@ DAG de Apache Airflow — Pipeline ETL Kimball - Hotel Dann Monasterio
 Orden de ejecucion:
   crear_schema -> [Dims en paralelo] -> fact_reservas
 """
+
 import os
 import re
 from datetime import datetime
@@ -16,7 +18,7 @@ from airflow.operators.bash import BashOperator
 from airflow.utils.task_group import TaskGroup
 
 PROJECT = "/opt/airflow/project"
-SRC     = f"{PROJECT}/src"
+SRC = f"{PROJECT}/src"
 SQL_DDL = f"{PROJECT}/sql/01_ddl_kimball.sql"
 
 # PYTHONPATH incluye PROJECT y SRC para que los scripts ETL
@@ -42,23 +44,26 @@ def _crear_schema():
          DROP/CREATE DATABASE y USE del DDL que son para MySQL Workbench)
     """
     import sys
+
     sys.path.insert(0, SRC)
     from sqlalchemy import create_engine, text
 
-    host = os.getenv("MYSQL_HOST",     "host.docker.internal")
-    port = os.getenv("MYSQL_PORT",     "3306")
-    user = os.getenv("MYSQL_USER",     "root")
-    pwd  = os.getenv("MYSQL_PASSWORD", "root")
-    db   = os.getenv("MYSQL_DATABASE", "hotel_dann_dw")
+    host = os.getenv("MYSQL_HOST", "host.docker.internal")
+    port = os.getenv("MYSQL_PORT", "3306")
+    user = os.getenv("MYSQL_USER", "root")
+    pwd = os.getenv("MYSQL_PASSWORD", "root")
+    db = os.getenv("MYSQL_DATABASE", "hotel_dann_dw")
 
     # PASO 1: Conectar SIN base -> crear schema si no existe
     url_sin_db = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/"
     engine_sin_db = create_engine(url_sin_db, pool_pre_ping=True, echo=False)
     with engine_sin_db.begin() as conn:
-        conn.execute(text(
-            f"CREATE DATABASE IF NOT EXISTS `{db}` "
-            f"CHARACTER SET utf8mb4 COLLATE utf8mb4_spanish_ci"
-        ))
+        conn.execute(
+            text(
+                f"CREATE DATABASE IF NOT EXISTS `{db}` "
+                f"CHARACTER SET utf8mb4 COLLATE utf8mb4_spanish_ci"
+            )
+        )
         print(f"OK Base de datos '{db}' creada o ya existia.")
     engine_sin_db.dispose()
 
@@ -87,7 +92,8 @@ def _crear_schema():
             stmt_clean = stmt.strip()
             m = re.search(
                 r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`]?(\w+)[`]?",
-                stmt_clean, re.IGNORECASE
+                stmt_clean,
+                re.IGNORECASE,
             )
             tabla = m.group(1) if m else "?"
             try:

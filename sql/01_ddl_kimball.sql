@@ -27,19 +27,18 @@ USE hotel_dann_dw;
 -- 1. Dim_Fecha
 -- =============================================================================
 CREATE TABLE Dim_Fecha (
-    id_fecha        INT         NOT NULL  COMMENT 'Clave YYYYMMDD',
+    id_fecha        INT         NOT NULL  COMMENT 'Clave YYYYMMDD (ej. 20220315)',
     fecha           DATE        NOT NULL,
     anio            SMALLINT    NOT NULL,
-    semestre        TINYINT     NOT NULL  COMMENT '1=Ene-Jun | 2=Jul-Dic',
-    trimestre       TINYINT     NOT NULL,
-    mes             TINYINT     NOT NULL,
-    nombre_mes      CHAR(3)     NOT NULL  COMMENT 'ENE..DIC',
-    semana_anio     TINYINT     NOT NULL,
+    trimestre       TINYINT     NOT NULL  COMMENT '1-4',
+    mes             TINYINT     NOT NULL  COMMENT '1-12',
+    nombre_mes      VARCHAR(12) NOT NULL  COMMENT 'Enero..Diciembre',
+    semana_anio     TINYINT     NOT NULL  COMMENT 'Semana ISO 1-53',
     dia_semana_num  TINYINT     NOT NULL  COMMENT '1=Lun..7=Dom',
     dia_semana      VARCHAR(12) NOT NULL,
     es_fin_semana   TINYINT(1)  NOT NULL DEFAULT 0,
     PRIMARY KEY (id_fecha)
-) ENGINE=InnoDB COMMENT='Calendario Jun 2020 - Abr 2026';
+) ENGINE=InnoDB COMMENT='Calendario con rango global de todas las fechas del parquet';
 
 -- =============================================================================
 -- 2. Dim_Segmento

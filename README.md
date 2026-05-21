@@ -50,11 +50,12 @@ proyecto_analitica_hotel/
 │       └── reservas_clean.parquet    # Dataset limpio tras ETL de ingesta
 │
 ├── notebooks/                        # Análisis y exploración (Jupyter)
-│   ├── 01_exploracion_dataset.ipynb
-│   ├── 02_limpieza_datos.ipynb
-│   ├── 03_analisis_exploratorio.ipynb
-│   ├── 04_analisis_descriptivo.ipynb
-│   └── 05_etl_kimball.ipynb
+│   ├── 01_exploracion_dataset.ipynb  # EDA completo sobre el dataset crudo
+│   ├── 02_limpieza_datos.ipynb       # Limpieza, ingeniería de datos → parquet
+│   └── archive/                      # Notebooks de referencia (no activos)
+│       ├── 03_analisis_exploratorio.ipynb
+│       ├── 04_analisis_descriptivo.ipynb
+│       └── 05_etl_kimball.ipynb
 │
 ├── src/                              # Scripts ETL de producción (Python)
 │   ├── db_connection.py              # Conexión centralizada MySQL
@@ -78,7 +79,8 @@ proyecto_analitica_hotel/
 │   ├── Dockerfile                    # Imagen custom de Airflow
 │   └── requirements-docker.txt       # Dependencias Python del contenedor
 │
-├── reports/                          # Visualizaciones exportadas
+├── reports/                          # Evidencias exportadas
+│   └── figures/                      # Gráficas del EDA (PNG, 150 dpi)
 ├── requirements.txt                  # Dependencias entorno local (Jupyter)
 └── README.md
 ```
@@ -115,24 +117,55 @@ El DDL completo con llaves foráneas y comentarios está en `sql/01_ddl_kimball.
 
 ---
 
-## Notebooks
+## Notebooks activos
 
-Los notebooks siguen la secuencia de la metodología CRISP-DM y deben ejecutarse en orden:
+El proyecto utiliza **2 notebooks activos** que cubren las fases de comprensión y preparación del dato (CRISP-DM). El análisis descriptivo y la presentación de KPIs se realizan directamente en la herramienta de BI (Power BI / Tableau) sobre el modelo dimensional ya cargado en MySQL. El ETL Kimball se ejecuta vía los scripts `src/*.py` orquestados por Airflow.
 
-### `01_exploracion_dataset.ipynb` — Comprensión del dato
-Carga el Excel original (dos hojas), inspecciona tipos de dato, detecta las **14 columnas completamente vacías** (ruido estructural), identifica nulos por variable y genera el primer perfil del dataset. Punto de partida para el plan de limpieza.
+### `01_exploracion_dataset.ipynb` — Comprensión del dato (EDA)
+
+Carga el Excel original (dos hojas, 70.882 registros × 79 columnas), inspecciona tipos de dato, detecta las **14 columnas completamente vacías** (ruido estructural) y las columnas sin variabilidad. Genera el perfil estadístico completo: distribuciones, correlaciones, boxplots de outliers y análisis temporal preliminar.
+
+Todas las gráficas se guardan automáticamente en `reports/figures/` como evidencia del EDA:
+
+| Archivo | Descripción |
+|---|---|
+| `01_segmento_comercial.png` | Distribución de reservas por segmento |
+| `02_temporada.png` | Alta vs. baja temporada |
+| `03_top10_canales.png` | Top 10 agencias / canales |
+| `04_tipo_habitacion.png` | Mix de tipos de habitación |
+| `05_sexo_huesped.png` | Distribución por sexo |
+| `06_histogramas_numericas.png` | Histogramas de variables financieras |
+| `07_serie_temporal_mensual.png` | Evolución mensual de registros |
+| `08_correlacion.png` | Heatmap de correlación |
+| `09_boxplot_<variable>.png` | Boxplot por variable (uno por variable numérica) |
 
 ### `02_limpieza_datos.ipynb` — Preparación de datos
-Elimina las columnas vacías, estandariza fechas (`fllega_aco`, `fsalid_aco`, `fechasischin`), corrige tipos numéricos en variables financieras, calcula `duracion_estancia` y `lead_time`, y exporta el resultado a `data/processed/reservas_clean.parquet`. Este parquet es la fuente única de verdad para todos los ETLs.
 
-### `03_analisis_exploratorio.ipynb` — EDA univariado y bivariado
-Distribuciones de `tarifa` e `ingreso_total` por canal y segmento, análisis de outliers (IQR), heatmaps de correlación entre variables financieras, y boxplots de `duracion_estancia` por temporada y tipo de habitación.
+Aplica el plan de calidad de datos derivado del EDA. Los pasos principales son:
 
-### `04_analisis_descriptivo.ipynb` — Análisis de negocio
-Agrupaciones estratégicas: ingresos por canal de distribución, tasa de ocupación por mes, ADR (Average Daily Rate) por segmento, perfil demográfico del huésped promedio (edad, nacionalidad, sexo) y análisis de concentración de reservas por empresa corporativa (`nombre_emp`).
+1. Eliminar columnas 100% nulas y sin variabilidad
+2. Anonimizar PII (`ident_aco` → hash SHA-256)
+3. Imputar `edad_aco` por mediana de segmento
+4. Estandarizar fechas (`fllega_aco`, `fsalid_aco`, `fechasischin`, `fcheckout`)
+5. Estandarizar fechas
+6. Corregir nulos y negativos en variables financieras (`adicional`, `valorconsumoadicional`, `servicioconsumoadicional`, `totalconsumosadicional`)
+7. Calcular variables derivadas: `duracion_estancia`, `lead_time`, `ingreso_total`, `rango_edad`, `periodo_covid`
+8. Validar duración de estancia
+9. Reemplazar infinitos y nulos residuales
+10. Eliminar duplicados exactos
+11. Corregir códigos DIAN en columna `nacionalidad` (063→ARGENTINA, 072→AUSTRIA, 149→CANADÁ, 169→COLOMBIA, 244→ANGOLA, 247→UZBEKISTÁN)
+12. Selección de variables del proyecto (VARS_FINAL)
+12. Exportar a `data/processed/reservas_clean.parquet` + `reservas_clean.xlsx`
 
-### `05_etl_kimball.ipynb` — Prototipo del pipeline ETL
-Versión interactiva del pipeline de carga al Data Warehouse. Permite ejecutar y validar cada dimensión de forma independiente antes de automatizarlo con Airflow. Incluye conteo de registros por tabla, verificación de FK y muestra de datos cargados.
+Este parquet es la **fuente única de verdad** para los ETLs de carga al Data Warehouse.
+
+### `notebooks/archive/` — Notebooks de referencia (no activos)
+
+Contienen prototipos y exploraciones previas conservados para referencia. No forman parte del pipeline de producción:
+
+- `03_analisis_exploratorio.ipynb` — EDA bivariado y multivariado sobre el dataset limpio
+- `04_analisis_descriptivo.ipynb` — Cálculo de KPIs y validación de hipótesis
+- `05_etl_kimball.ipynb` — Prototipo interactivo del pipeline ETL (reemplazado por `src/*.py`)
 
 ---
 

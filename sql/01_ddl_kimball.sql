@@ -144,9 +144,6 @@ CREATE TABLE Fact_Reservas (
     id_huesped             INT            NOT NULL DEFAULT 1,
     id_contexto_huesped    INT            NOT NULL,
 
-    -- Dimension degenerada adicional
-    folio_titular          VARCHAR(30)             COMMENT 'Folio titular de la reserva',
-
     -- Metricas monetarias (COP)
     tarifa                 DECIMAL(14,2)  NOT NULL DEFAULT 0.00,
     valorplan              DECIMAL(14,2),
@@ -158,7 +155,7 @@ CREATE TABLE Fact_Reservas (
     ingreso_total          DECIMAL(14,2)  NOT NULL DEFAULT 0.00,
 
     -- Metricas temporales
-    duracion_estancia      TINYINT,
+    duracion_estancia      SMALLINT UNSIGNED,
     lead_time              SMALLINT,
 
     PRIMARY KEY (id_reserva),
@@ -169,7 +166,6 @@ CREATE TABLE Fact_Reservas (
     INDEX idx_temporada   (id_temporada),
     INDEX idx_huesped     (id_huesped),
     INDEX idx_ctx_huesped (id_contexto_huesped),
-    INDEX idx_folio       (folio_titular),
     INDEX idx_ingreso     (ingreso_total),
 
     CONSTRAINT fk_fecha       FOREIGN KEY (id_fecha)       REFERENCES Dim_Fecha(id_fecha)           ON UPDATE CASCADE,

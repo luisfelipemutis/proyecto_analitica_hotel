@@ -9,8 +9,6 @@ Jerarquía financiera:
   totalconsumosplan + totalconsumosadicional  =  ingreso_total
 """
 
-# idn_aco (rol), clasi_aco (adulto/niño), incognito (S/N)
-
 import hashlib
 import pandas as pd
 import numpy as np
@@ -212,9 +210,9 @@ def _bk_contexto_series(df: pd.DataFrame) -> pd.Series:
         .fillna("No registra")
     )
 
-    nacionalidad = df.get("nacionalidad", pd.Series([pd.NA] * len(df), index=df.index)).map(
-        _map_nacionalidad
-    )
+    nacionalidad = df.get(
+        "nacionalidad", pd.Series([pd.NA] * len(df), index=df.index)
+    ).map(_map_nacionalidad)
 
     keys = (
         rol.astype(str)
@@ -296,7 +294,7 @@ def cargar_maps(engine) -> dict:
 
 def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
     # Fechas
-    for col in ["fllega_aco", "fsalid_aco", "fcheckout", "fechasischin"]:
+    for col in ["fecha", "fllega_aco", "fsalid_aco", "fcheckout", "fechasischin"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
 
@@ -342,37 +340,76 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
             "(se excluiran por integridad referencial)"
         )
 
-    # ingreso_total con fórmula correcta
-    if "totalconsumosplan" in df.columns:
-        df["ingreso_total"] = (
-            (
-                pd.to_numeric(df["totalconsumosplan"], errors="coerce").fillna(0)
-                + pd.to_numeric(
-                    df.get("totalconsumosadicional", 0), errors="coerce"
-                ).fillna(0)
-            )
-            .clip(lower=0)
-            .round(2)
-        )
-    else:
-        val = pd.to_numeric(df.get("valorplan", 0), errors="coerce").fillna(0)
-        iva = pd.to_numeric(df.get("ivaplan", 0), errors="coerce").fillna(0)
-        srv = pd.to_numeric(df.get("servicioplan", 0), errors="coerce").fillna(0)
-        adi = pd.to_numeric(
-            df.get("totalconsumosadicional", 0), errors="coerce"
-        ).fillna(0)
-        df["ingreso_total"] = (val + iva + srv + adi).clip(lower=0).round(2)
+    # Ingreso total (jerarquia financiera de negocio)
+    # ingreso_total = totalconsumosplan + totalconsumosadicional + tarifa + adicional
+    df["ingreso_total"] = (
+        pd.to_numeric(df.get("totalconsumosplan", 0), errors="coerce")
+        .fillna(0)
+        .clip(lower=0)
+        + pd.to_numeric(df.get("totalconsumosadicional", 0), errors="coerce").fillna(0)
+        + pd.to_numeric(df.get("tarifa", 0), errors="coerce").fillna(0).clip(lower=0)
+        + pd.to_numeric(df.get("adicional", 0), errors="coerce").fillna(0)
+    ).round(2)
 
     # Variables temporales derivadas
     if "fllega_aco" in df.columns and "fsalid_aco" in df.columns:
         df["duracion_estancia"] = (df["fsalid_aco"] - df["fllega_aco"]).dt.days
+        n_neg = int((df["duracion_estancia"] < 0).sum())
+        n_cero = int((df["duracion_estancia"] == 0).sum())
+        print(
+            f"  duracion_estancia — negativos (se anulan): {n_neg:,} | ceros: {n_cero:,}"
+        )
         df.loc[df["duracion_estancia"] < 0, "duracion_estancia"] = np.nan
-        df.loc[df["duracion_estancia"] > 60, "duracion_estancia"] = np.nan
 
-    if "fechasischin" in df.columns and "fllega_aco" in df.columns:
-        df["lead_time"] = (df["fllega_aco"] - df["fechasischin"]).dt.days
+    if "fecha" in df.columns and "fllega_aco" in df.columns:
+        df["lead_time"] = (
+            df["fllega_aco"].dt.normalize() - df["fecha"].dt.normalize()
+        ).dt.days
+        n_lt_neg = int((df["lead_time"] < 0).sum())
+        print(f"lead_time — negativos (se ajustan a 0): {n_lt_neg:,}")
         df.loc[df["lead_time"] < 0, "lead_time"] = 0
-        df.loc[df["lead_time"] > 365, "lead_time"] = np.nan
+    elif "fechasischin" in df.columns and "fllega_aco" in df.columns:
+        df["lead_time"] = (
+            df["fllega_aco"].dt.normalize() - df["fechasischin"].dt.normalize()
+        ).dt.days
+        n_lt_neg = int((df["lead_time"] < 0).sum())
+        print(f"lead_time — negativos (se ajustan a 0): {n_lt_neg:,}")
+        df.loc[df["lead_time"] < 0, "lead_time"] = 0
+
+    if "duracion_estancia" in df.columns:
+        neg = int((df["duracion_estancia"] < 0).sum())
+        ceros = int((df["duracion_estancia"] == 0).sum())
+        print(f"Registros con duración negativa: {neg:,}")
+        print(f"Registros con duración = 0 días: {ceros:,}")
+        print("\nDistribución de duración de estancia:")
+        print(df["duracion_estancia"].describe())
+
+    if {"duracion_estancia", "lead_time", "ingreso_total"}.issubset(df.columns):
+        print(
+            f"\nduracion_estancia — media: {df['duracion_estancia'].mean():.1f} noches  "
+            f"max: {df['duracion_estancia'].max():.0f}"
+        )
+        print(
+            f"lead_time         — media: {df['lead_time'].mean():.1f} dias  "
+            f"max: {df['lead_time'].max():.0f}"
+        )
+        print(
+            f"ingreso_total     — min: {df['ingreso_total'].min():,.0f}  "
+            f"max: {df['ingreso_total'].max():,.0f}  "
+            f"media: {df['ingreso_total'].mean():,.0f}"
+        )
+
+    # Normaliza a enteros anulables para escribir al DW sin floats intermedios.
+    if "duracion_estancia" in df.columns:
+        df["duracion_estancia"] = (
+            pd.to_numeric(df["duracion_estancia"], errors="coerce")
+            .round(0)
+            .astype("Int64")
+        )
+
+    if "lead_time" in df.columns:
+        df["lead_time"] = pd.to_numeric(df["lead_time"], errors="coerce").fillna(0)
+        df["lead_time"] = df["lead_time"].clip(lower=0).round(0).astype("Int64")
 
     # Métricas monetarias: redondear
     for col in [

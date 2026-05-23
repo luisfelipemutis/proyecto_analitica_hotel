@@ -8,12 +8,12 @@ Origen de cada campo
 ---------------------
 tipo_hab        : campo tiphab_tip del parquet  (código de tipo de suite/hab).
 clase_hab       : campo clahab_clh del parquet  (código de clase/ocupación).
-num_habitacion  : campo nrohab_hab del parquet  (número de habitación).
+num_hab         : campo nrohab_hab del parquet  (número de habitación).
 nombre_tipo     : derivado del diccionario META_TIPO según tipo_hab.
+nombre_clase    : derivado del diccionario META_CLASE según clase_hab.
 descripcion_tipo: derivado del diccionario META_TIPO según tipo_hab.
 capacidad_max   : derivado del diccionario META_TIPO según tipo_hab.
 categoria       : derivado del diccionario META_TIPO según tipo_hab.
-nombre_clase    : derivado del diccionario META_CLASE según clase_hab.
 
 Los diccionarios META_TIPO y META_CLASE son catálogos internos del hotel;
 no existen como columnas en el parquet. Se mantienen aquí como fuente de
@@ -30,7 +30,6 @@ PARQUET = Path(__file__).parent.parent / "data" / "processed" / "reservas_clean.
 TABLE = "Dim_Habitacion"
 
 # Catálogo de tipos de habitación del Hotel Dann Monasterio.
-# descripcion_tipo es VARCHAR(350) en MySQL.
 # Estructura: codigo → (nombre_tipo, descripcion_tipo, capacidad_max, categoria)
 META_TIPO = {
     "ST": (
@@ -88,21 +87,11 @@ META_CLASE = {
     "M5": ("Multiple 5+", "5 o mas personas"),
 }
 
-# Fallback para tipos y clases no catalogados en META_TIPO / META_CLASE
-TIPO_FALLBACK = (
-    "Sin Clasificar",
-    "Tipo de habitacion no catalogado.",
-    2,
-    "Sin Clasificar",
-)
-CLASE_FALLBACK = ("Sin Clasificar", "Clase de ocupacion no catalogada.")
-
 
 # ── EXTRAER ──────────────────────────────────────────────────────────────────
 def extraer() -> pd.DataFrame:
     """
     Lee tiphab_tip, clahab_clh y nrohab_hab desde el parquet limpio.
-    El parquet es la única fuente de verdad; si no existe se lanza error.
     """
     if not PARQUET.exists():
         raise FileNotFoundError(
@@ -116,11 +105,6 @@ def extraer() -> pd.DataFrame:
     print(f"  Tipos únicos (tiphab_tip)    : {df['tiphab_tip'].nunique()}")
     print(f"  Clases únicas (clahab_clh)   : {df['clahab_clh'].nunique()}")
     print(f"  Habitaciones únicas          : {df['nrohab_hab'].nunique()}")
-    sin_tipo = df["tiphab_tip"].isna().sum()
-    if sin_tipo:
-        print(
-            f"  WARN: {sin_tipo:,} registros sin tiphab_tip → se excluyen de la dimensión"
-        )
     return df
 
 
@@ -129,18 +113,9 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     """
     Genera una fila por combinación única tipo_hab × clase_hab × num_habitacion y la
     enriquece con los atributos descriptivos de los catálogos del hotel.
-
-    Pasos
-    -----
-    1. Eliminar filas sin tiphab_tip (no pueden clasificarse en la dimensión).
-    2. Deduplicar por la combinación tipo_hab × clase_hab × num_habitacion.
-    3. Ordenar para consistencia entre ejecuciones.
-    4. Enriquecer con nombre_tipo, descripcion_tipo, capacidad_max, categoria
-       desde META_TIPO (fallback si el código no está catalogado).
-    5. Enriquecer con nombre_clase desde META_CLASE.
-    6. Generar id_habitacion secuencial.
     """
-    # 1-3. Deduplicar y ordenar
+
+    # Deduplicar y ordenar
     combo = (
         df.dropna(subset=["tiphab_tip"])
         .drop_duplicates()
@@ -149,26 +124,17 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     )
     combo.columns = ["tipo_hab", "clase_hab", "num_habitacion"]
 
-    # 4. Enriquecer con catálogo de tipos de habitación
-    combo["nombre_tipo"] = combo["tipo_hab"].map(
-        lambda x: META_TIPO.get(x, TIPO_FALLBACK)[0]
-    )
-    combo["descripcion_tipo"] = combo["tipo_hab"].map(
-        lambda x: META_TIPO.get(x, TIPO_FALLBACK)[1]
-    )
-    combo["capacidad_max"] = combo["tipo_hab"].map(
-        lambda x: META_TIPO.get(x, TIPO_FALLBACK)[2]
-    )
-    combo["categoria"] = combo["tipo_hab"].map(
-        lambda x: META_TIPO.get(x, TIPO_FALLBACK)[3]
-    )
+    # Enriquecer con metadatos de catálogos internos
+    tipo_meta = combo["tipo_hab"].map(META_TIPO)
+    clase_meta = combo["clase_hab"].map(META_CLASE)
 
-    # 5. Enriquecer con catálogo de clases de ocupación
-    combo["nombre_clase"] = combo["clase_hab"].map(
-        lambda x: META_CLASE.get(x, CLASE_FALLBACK)[0]
-    )
+    combo["nombre_tipo"] = tipo_meta.apply(lambda x: x[0] if isinstance(x, tuple) else "No definido")
+    combo["descripcion_tipo"] = tipo_meta.apply(lambda x: x[1] if isinstance(x, tuple) else "Tipo no definido en catalogo")
+    combo["capacidad_max"] = tipo_meta.apply(lambda x: x[2] if isinstance(x, tuple) else 2).astype(int)
+    combo["categoria"] = tipo_meta.apply(lambda x: x[3] if isinstance(x, tuple) else "No definida")
+    combo["nombre_clase"] = clase_meta.apply(lambda x: x[0] if isinstance(x, tuple) else "No definida")
 
-    # 6. id_habitacion secuencial
+    # id_habitacion secuencial
     combo.insert(0, "id_habitacion", range(1, len(combo) + 1))
 
     print(f"  Combinaciones tipo × clase   : {len(combo)}")
@@ -194,16 +160,14 @@ def cargar(df: pd.DataFrame, engine) -> None:
     """
     Carga Dim_Habitacion en MySQL.
     Estrategia idempotente: DELETE + INSERT.
-
-    Solo se cargan las columnas definidas en el DDL de MySQL.
-    nombre_tipo y nombre_clase son atributos intermedios de enriquecimiento
-    que no están en el DDL actual; se excluyen en esta capa.
     """
     COLS_DDL = [
         "id_habitacion",
         "num_habitacion",
         "tipo_hab",
+        "nombre_tipo",
         "clase_hab",
+        "nombre_clase",
         "descripcion_tipo",
         "capacidad_max",
         "categoria",

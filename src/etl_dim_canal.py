@@ -1,7 +1,7 @@
 """
 etl_dim_canal.py
 ETL — Dim_Canal
-Extrae los canales/agencias únicos del parquet limpio y los carga en MySQL.
+Extrae los canales/agencias únicos del parquet limpio y los carga en hotel_dann_dw.
 
 Origen de cada campo
 ---------------------
@@ -12,13 +12,6 @@ tipo_canal    : clasificación de negocio derivada del diccionario TIPO_CANAL.
                 No existe como campo en el parquet; se asigna aquí según
                 el código del canal (ej. BKNG → OTA, RECE → Directo Presencial).
 es_online     : flag 0/1 derivado del mismo diccionario TIPO_CANAL.
-
-Registro por defecto (ND)
---------------------------
-Los registros del parquet donde codiga_age es nulo o vacío no tienen canal
-identificado. Para no perderlos en la Fact_Reservas se inserta un registro
-"No Disponible" (ND) que los agrupa. etl_fact_reservas.py debe mapear
-esos registros al id_canal correspondiente a ND.
 """
 
 import pandas as pd
@@ -60,20 +53,11 @@ TIPO_CANAL = {
     "HPG": ("Mayorista Online", 1),
 }
 
-# Registro por defecto para reservas sin canal identificado
-CANAL_ND = {
-    "codigo_canal": "ND",
-    "nombre_canal": "Sin Canal Registrado",
-    "tipo_canal": "No Clasificado",
-    "es_online": 0,
-}
-
 
 # ── EXTRAER ──────────────────────────────────────────────────────────────────
 def extraer() -> pd.DataFrame:
     """
     Lee codiga_age y nombre_age desde el parquet limpio.
-    El parquet es la única fuente de verdad; si no existe se lanza error.
     """
     if not PARQUET.exists():
         raise FileNotFoundError(
@@ -82,8 +66,6 @@ def extraer() -> pd.DataFrame:
         )
     df = pd.read_parquet(PARQUET, columns=["codiga_age", "nombre_age"])
     print(f"  Registros leídos del parquet : {len(df):,}")
-    sin_canal = df["codiga_age"].isna().sum()
-    print(f"  Registros sin codiga_age     : {sin_canal:,}  → se mapearán a ND")
     return df
 
 
@@ -95,14 +77,11 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     Pasos
     -----
     1. Deduplicar por codiga_age (un registro por canal único).
-    2. Los registros con codiga_age nulo se descartan del deduplicado
-       porque se representan con el registro ND al final.
-    3. Rellenar nombre_canal nulo con "Canal <codigo>".
-    4. Asignar tipo_canal y es_online desde el diccionario TIPO_CANAL.
-    5. Agregar registro ND al final para agrupar reservas sin canal.
-    6. Generar id_canal secuencial.
+    2. Rellenar nombre_canal nulo con "Canal <codigo>".
+    3. Asignar tipo_canal y es_online desde el diccionario TIPO_CANAL.
+    4. Generar id_canal secuencial.
     """
-    # 1-2. Deduplicar, excluyendo nulos de codiga_age
+    # Deduplicar, excluyendo nulos de codiga_age
     canales = (
         df[["codiga_age", "nombre_age"]]
         .dropna(subset=["codiga_age"])
@@ -112,7 +91,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     )
     canales.columns = ["codigo_canal", "nombre_canal"]
 
-    # 3. Rellenar nombre_canal nulo con fallback legible
+    # Rellenar nombre_canal nulo con fallback legible
     nulos_nombre = canales["nombre_canal"].isna().sum()
     if nulos_nombre > 0:
         canales["nombre_canal"] = canales.apply(
@@ -125,7 +104,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
         )
         print(f"  INFO: {nulos_nombre} canal(es) sin nombre → rellenados con codigo.")
 
-    # 4. Clasificación de negocio (no existe en el parquet, se deriva aquí)
+    # Clasificación de negocio (no existe en el parquet, se deriva aquí)
     canales["tipo_canal"] = canales["codigo_canal"].map(
         lambda x: TIPO_CANAL.get(x, ("Otro", 0))[0]
     )
@@ -133,14 +112,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: TIPO_CANAL.get(x, ("Otro", 0))[1]
     )
 
-    # 5. Agregar registro ND para reservas sin canal registrado
-    fila_nd = pd.DataFrame([CANAL_ND])
-    canales = pd.concat([canales, fila_nd], ignore_index=True)
-
-    # 6. id_canal secuencial
-    canales.insert(0, "id_canal", range(1, len(canales) + 1))
-
-    print(f"  Canales únicos cargados      : {len(canales):,}  (incluye fila ND)")
+    print(f"  Canales únicos cargados      : {len(canales):,}")
     print(f"\n  Distribución por tipo_canal:")
     print(canales["tipo_canal"].value_counts().to_string())
     return canales
@@ -154,6 +126,8 @@ def cargar(df: pd.DataFrame, engine) -> None:
     """
     with engine.begin() as conn:
         conn.execute(text(f"DELETE FROM {TABLE}"))
+        conn.execute(text(f"ALTER TABLE {TABLE} AUTO_INCREMENT = 1"))
+
     df.to_sql(
         TABLE,
         con=engine,

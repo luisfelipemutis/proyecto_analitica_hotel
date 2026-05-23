@@ -53,13 +53,6 @@ CREATE TABLE Dim_Segmento (
     UNIQUE KEY uq_seg_cod (codigo_segmento)
 ) ENGINE=InnoDB;
 
-INSERT INTO Dim_Segmento (codigo_segmento, nombre_segmento, descripcion, tipo_cliente) VALUES
-('COR', 'Corporativo',          'Empresas con contrato corporativo regular',               'Corporativo'),
-('CE',  'Corporativo Especial', 'Empresas con tarifas preferenciales negociadas',           'Corporativo'),
-('ME',  'Mostrador/Externo',    'Reservas walk-in o directas sin convenio',                 'Transiente'),
-('EM',  'Empleados',            'Reservas para empleados del hotel o convenios laborales',  'Interno'),
-('T&T', 'Tour & Travel',        'Agencias de viaje y operadores turísticos',                'Agencias');
-
 -- =============================================================================
 -- 3. Dim_Canal
 -- =============================================================================
@@ -86,14 +79,6 @@ CREATE TABLE Dim_Habitacion (
     categoria        VARCHAR(20)  NOT NULL COMMENT 'Suite|Estandar',
     PRIMARY KEY (id_habitacion)
 ) ENGINE=InnoDB;
-
-INSERT INTO Dim_Habitacion (tipo_hab, clase_hab, descripcion_tipo, capacidad_max, categoria) VALUES
-('S3','S3','Suite Junior - sala compacta',        2,'Suite'),
-('SE','SE','Suite Estandar - sala separada',      2,'Suite'),
-('ST','ST','Suite Superior - terraza',            2,'Suite'),
-('SG','SG','Habitacion Sencilla individual',      1,'Estandar'),
-('DB','DB','Habitacion Doble estandar',           2,'Estandar'),
-('CD','CD','Habitacion Cuadruple - familiar',     4,'Estandar');
 
 -- =============================================================================
 -- 5. Dim_Huesped
@@ -125,18 +110,11 @@ CREATE TABLE Dim_Empresa (
 CREATE TABLE Dim_Temporada (
     id_temporada      INT         NOT NULL,
     codigo_temporada  CHAR(5)     NOT NULL COMMENT 'A|B|M|ND',
-    nombre_temporada  VARCHAR(20) NOT NULL,
+    nombre_temporada  VARCHAR(50) NOT NULL,
     descripcion       VARCHAR(200),
-    nombre_en_sistema VARCHAR(80),
     PRIMARY KEY (id_temporada),
     UNIQUE KEY uq_temp_cod (codigo_temporada)
 ) ENGINE=InnoDB;
-
-INSERT INTO Dim_Temporada VALUES
-(1,  'A',  'Alta',         'Temporada alta demanda: dic-ene, julio, festivos', 'ALTA'),
-(2,  'B',  'Baja',         'Temporada baja demanda: meses intermedios',        'BAJA'),
-(3,  'M',  'Media',        'Temporada intermedia',                             'MEDIA'),
-(99, 'ND', 'No Disponible','Sin temporada registrada (53.27% registros)',       'NULL');
 
 -- =============================================================================
 -- 8. Fact_Reservas  (cargar DESPUES de todas las dimensiones)

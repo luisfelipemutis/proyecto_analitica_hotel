@@ -107,18 +107,27 @@ INSERT INTO Dim_Habitacion (tipo_hab, clase_hab, descripcion_tipo, capacidad_max
 -- =============================================================================
 CREATE TABLE Dim_Huesped (
     id_registro_huesped  INT          NOT NULL AUTO_INCREMENT,
-    id_huesped           CHAR(12)     NOT NULL COMMENT 'Hash SHA-256 de ident_aco',
+    id_huesped           CHAR(16)     NOT NULL COMMENT 'Hash SHA-256 truncado de ident_aco (notebook 02) - 16 chars hex',
     sexo_aco             VARCHAR(15)           COMMENT 'Masculino|Femenino|No especificado',
+    edad_aco_limpia      TINYINT UNSIGNED      COMMENT 'Edad en años enteros - imputada cuando edad_fue_imputada=True',
     rango_edad           VARCHAR(10)           COMMENT '18-25|26-35|36-50|51-65|65+',
-    nacionalidad         VARCHAR(50),
-    oficio               VARCHAR(80),
-    nombre_emp           VARCHAR(100),
+    nacionalidad         VARCHAR(80)           COMMENT 'Nombre completo del país (ISO-3 mapeado)',
     PRIMARY KEY (id_registro_huesped),
     UNIQUE KEY uq_huesped_hash (id_huesped)
-) ENGINE=InnoDB COMMENT='Perfil anonimizado - datos PII hasheados';
+) ENGINE=InnoDB COMMENT='Perfil anonimizado - datos PII hasheados en notebook 02';
 
 -- =============================================================================
--- 6. Dim_Temporada
+-- 6. Dim_Empresa
+-- =============================================================================
+CREATE TABLE Dim_Empresa (
+    id_empresa      INT          NOT NULL AUTO_INCREMENT,
+    nombre_empresa  VARCHAR(150) NOT NULL COMMENT 'Nombre de la empresa asociada a la reserva',
+    PRIMARY KEY (id_empresa),
+    UNIQUE KEY uq_empresa_nombre (nombre_empresa)
+) ENGINE=InnoDB COMMENT='Empresas asociadas a reservas corporativas - campo nombre_emp del parquet';
+
+-- =============================================================================
+-- 7. Dim_Temporada
 -- =============================================================================
 CREATE TABLE Dim_Temporada (
     id_temporada      INT         NOT NULL,
@@ -137,7 +146,7 @@ INSERT INTO Dim_Temporada VALUES
 (99, 'ND', 'No Disponible','Sin temporada registrada (53.27% registros)',       'NULL');
 
 -- =============================================================================
--- 7. Fact_Reservas  (cargar DESPUES de todas las dimensiones)
+-- 8. Fact_Reservas  (cargar DESPUES de todas las dimensiones)
 -- =============================================================================
 CREATE TABLE Fact_Reservas (
     id_reserva             INT            NOT NULL AUTO_INCREMENT,
@@ -148,10 +157,11 @@ CREATE TABLE Fact_Reservas (
     id_canal               INT            NOT NULL,
     id_habitacion          INT            NOT NULL,
     id_temporada           INT            NOT NULL DEFAULT 99,
-    id_huesped             CHAR(12),
+    id_huesped             CHAR(16),
+    id_empresa             INT            NOT NULL DEFAULT 9999,
 
     -- Dimension degenerada
-    numvoucher             VARCHAR(30),
+    folio_titular          VARCHAR(30)             COMMENT 'Folio titular de la reserva',
 
     -- Metricas monetarias (COP)
     tarifa                 DECIMAL(14,2)  NOT NULL DEFAULT 0.00,
@@ -173,14 +183,16 @@ CREATE TABLE Fact_Reservas (
     INDEX idx_canal       (id_canal),
     INDEX idx_habitacion  (id_habitacion),
     INDEX idx_temporada   (id_temporada),
-    INDEX idx_voucher     (numvoucher),
+    INDEX idx_empresa     (id_empresa),
+    INDEX idx_folio       (folio_titular),
     INDEX idx_ingreso     (ingreso_total),
 
     CONSTRAINT fk_fecha       FOREIGN KEY (id_fecha)       REFERENCES Dim_Fecha(id_fecha)           ON UPDATE CASCADE,
     CONSTRAINT fk_segmento    FOREIGN KEY (id_segmento)    REFERENCES Dim_Segmento(id_segmento)     ON UPDATE CASCADE,
     CONSTRAINT fk_canal       FOREIGN KEY (id_canal)       REFERENCES Dim_Canal(id_canal)           ON UPDATE CASCADE,
     CONSTRAINT fk_habitacion  FOREIGN KEY (id_habitacion)  REFERENCES Dim_Habitacion(id_habitacion) ON UPDATE CASCADE,
-    CONSTRAINT fk_temporada   FOREIGN KEY (id_temporada)   REFERENCES Dim_Temporada(id_temporada)   ON UPDATE CASCADE
+    CONSTRAINT fk_temporada   FOREIGN KEY (id_temporada)   REFERENCES Dim_Temporada(id_temporada)   ON UPDATE CASCADE,
+    CONSTRAINT fk_empresa     FOREIGN KEY (id_empresa)     REFERENCES Dim_Empresa(id_empresa)       ON UPDATE CASCADE
 
 ) ENGINE=InnoDB COMMENT='Hechos: 70,882 reservas Jun 2020 - Abr 2026';
 
@@ -240,9 +252,10 @@ SELECT 'Dim_Fecha'      AS tabla, COUNT(*) AS filas FROM Dim_Fecha      UNION AL
 SELECT 'Dim_Segmento',              COUNT(*)         FROM Dim_Segmento  UNION ALL
 SELECT 'Dim_Canal',                 COUNT(*)         FROM Dim_Canal     UNION ALL
 SELECT 'Dim_Habitacion',            COUNT(*)         FROM Dim_Habitacion UNION ALL
-SELECT 'Dim_Temporada',             COUNT(*)         FROM Dim_Temporada UNION ALL
 SELECT 'Dim_Huesped',               COUNT(*)         FROM Dim_Huesped   UNION ALL
+SELECT 'Dim_Empresa',               COUNT(*)         FROM Dim_Empresa   UNION ALL
+SELECT 'Dim_Temporada',             COUNT(*)         FROM Dim_Temporada UNION ALL
 SELECT 'Fact_Reservas',             COUNT(*)         FROM Fact_Reservas;
 
 -- FIN DEL SCRIPT
--- Orden carga CSV: Dim_Fecha > Dim_Segmento > Dim_Canal > Dim_Habitacion > Dim_Temporada > Dim_Huesped > Fact_Reservas
+-- Orden carga ETL: Dim_Fecha > Dim_Segmento > Dim_Canal > Dim_Habitacion > Dim_Huesped > Dim_Empresa > Dim_Temporada > Fact_Reservas

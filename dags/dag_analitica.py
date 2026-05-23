@@ -67,20 +67,21 @@ def _crear_schema():
         print(f"OK Base de datos '{db}' creada o ya existia.")
     engine_sin_db.dispose()
 
-    # PASO 2: Conectar CON la base -> ejecutar solo CREATE TABLE via regex
+    # Conectar CON la base -> ejecutar solo CREATE TABLE
     url_con_db = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{db}"
     engine = create_engine(url_con_db, pool_pre_ping=True, echo=False)
 
     raw_ddl = Path(SQL_DDL).read_text(encoding="utf-8")
 
-    # Regex robusto: extrae solo bloques CREATE TABLE ignorando
-    # DROP/CREATE DATABASE y USE que causan errores cuando van mezclados
-    # con comentarios en el primer bloque al hacer split(';')
-    patron = re.compile(
-        r"(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\w`]+\s*\([^;]+\)(?:[^;]*?))",
-        re.IGNORECASE | re.DOTALL,
-    )
-    table_stmts = patron.findall(raw_ddl)
+    # El regex anterior fallaba cuando había paréntesis dentro de comentarios
+    # SQL (ej. COMMENT='texto (detalle)'). Se usa split por ';' sobre el DDL
+    # sin comentarios de línea para extraer CREATE TABLE de forma estable.
+    ddl_sin_comentarios = re.sub(r"(?m)^\s*--.*$", "", raw_ddl)
+    table_stmts = [
+        stmt.strip()
+        for stmt in ddl_sin_comentarios.split(";")
+        if stmt.strip().upper().startswith("CREATE TABLE")
+    ]
 
     if not table_stmts:
         raise ValueError(f"No se encontraron CREATE TABLE en {SQL_DDL}.")
@@ -173,6 +174,14 @@ with DAG(
                 f"cd {PROJECT} && "
                 f"PYTHONPATH={PYTHONPATH_ETL} {MYSQL_ENV} "
                 f"python {SRC}/etl_dim_huesped.py"
+            ),
+        )
+        dim_contexto_huesped = BashOperator(
+            task_id="dim_contexto_huesped",
+            bash_command=(
+                f"cd {PROJECT} && "
+                f"PYTHONPATH={PYTHONPATH_ETL} {MYSQL_ENV} "
+                f"python {SRC}/etl_dim_contexto_huesped.py"
             ),
         )
         dim_empresa = BashOperator(

@@ -78,6 +78,7 @@ CREATE TABLE Dim_Canal (
 -- =============================================================================
 CREATE TABLE Dim_Habitacion (
     id_habitacion    INT          NOT NULL AUTO_INCREMENT,
+    num_habitacion   VARCHAR(20),
     tipo_hab         CHAR(3)      NOT NULL COMMENT 'S3|SE|ST|SP|SC|ST',
     clase_hab        CHAR(3)      NOT NULL,
     descripcion_tipo VARCHAR(350) NOT NULL COMMENT 'Descripcion completa del tipo de suite',

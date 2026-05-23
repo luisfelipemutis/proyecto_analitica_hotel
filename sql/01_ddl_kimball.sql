@@ -86,16 +86,29 @@ CREATE TABLE Dim_Habitacion (
 CREATE TABLE Dim_Huesped (
     id_registro_huesped  INT          NOT NULL AUTO_INCREMENT,
     id_huesped           CHAR(16)     NOT NULL COMMENT 'Hash SHA-256 truncado de ident_aco (notebook 02) - 16 chars hex',
-    sexo_aco             VARCHAR(15)           COMMENT 'Masculino|Femenino|No especificado',
-    edad_aco_limpia      TINYINT UNSIGNED      COMMENT 'Edad en años enteros - imputada cuando edad_fue_imputada=True',
-    rango_edad           VARCHAR(10)           COMMENT '18-25|26-35|36-50|51-65|65+',
-    nacionalidad         VARCHAR(80)           COMMENT 'Nombre completo del país (ISO-3 mapeado)',
     PRIMARY KEY (id_registro_huesped),
     UNIQUE KEY uq_huesped_hash (id_huesped)
-) ENGINE=InnoDB COMMENT='Perfil anonimizado - datos PII hasheados en notebook 02';
+) ENGINE=InnoDB COMMENT='Dimension de identidad del huesped (estable)';
 
 -- =============================================================================
--- 6. Dim_Empresa
+-- 6. Dim_Contexto_Huesped
+-- =============================================================================
+CREATE TABLE Dim_Contexto_Huesped (
+    id_contexto_huesped  INT          NOT NULL AUTO_INCREMENT,
+    bk_contexto_huesped  CHAR(20)     NOT NULL COMMENT 'Hash SHA-256 truncado del contexto por reserva',
+    rol                  VARCHAR(20)           COMMENT 'Rol del huesped: Titular|Acompanante|Dependiente|No registra',
+    clasificacion        VARCHAR(20)           COMMENT 'Clasificacion: Adulto|Nino|No registra',
+    privacidad           VARCHAR(20)           COMMENT 'Modo incognito: Si|No|No registra',
+    sexo                 VARCHAR(15)           COMMENT 'Masculino|Femenino|No especificado',
+    edad                 TINYINT UNSIGNED      COMMENT 'Edad de la reserva (si aplica)',
+    rango_edad           VARCHAR(20)           COMMENT '<18|18-25|26-35|36-50|51-65|66+|No registra',
+    nacionalidad         VARCHAR(80)           COMMENT 'Nacionalidad reportada en la reserva',
+    PRIMARY KEY (id_contexto_huesped),
+    UNIQUE KEY uq_ctx_huesped_bk (bk_contexto_huesped)
+) ENGINE=InnoDB COMMENT='Contexto del huesped por reserva (mini dimension)';
+
+-- =============================================================================
+-- 7. Dim_Empresa
 -- =============================================================================
 CREATE TABLE Dim_Empresa (
     id_empresa      INT          NOT NULL AUTO_INCREMENT,
@@ -105,7 +118,7 @@ CREATE TABLE Dim_Empresa (
 ) ENGINE=InnoDB COMMENT='Empresas asociadas a reservas corporativas - campo nombre_emp del parquet';
 
 -- =============================================================================
--- 7. Dim_Temporada
+-- 8. Dim_Temporada
 -- =============================================================================
 CREATE TABLE Dim_Temporada (
     id_temporada      INT         NOT NULL,
@@ -117,7 +130,7 @@ CREATE TABLE Dim_Temporada (
 ) ENGINE=InnoDB;
 
 -- =============================================================================
--- 8. Fact_Reservas  (cargar DESPUES de todas las dimensiones)
+-- 9. Fact_Reservas  (cargar DESPUES de todas las dimensiones)
 -- =============================================================================
 CREATE TABLE Fact_Reservas (
     id_reserva             INT            NOT NULL AUTO_INCREMENT,
@@ -128,7 +141,8 @@ CREATE TABLE Fact_Reservas (
     id_canal               INT            NOT NULL,
     id_habitacion          INT            NOT NULL,
     id_temporada           INT            NOT NULL DEFAULT 99,
-    id_huesped             CHAR(16),
+    id_huesped             INT            NOT NULL DEFAULT 1,
+    id_contexto_huesped    INT            NOT NULL,
     id_empresa             INT            NOT NULL DEFAULT 9999,
 
     -- Dimension degenerada
@@ -154,6 +168,8 @@ CREATE TABLE Fact_Reservas (
     INDEX idx_canal       (id_canal),
     INDEX idx_habitacion  (id_habitacion),
     INDEX idx_temporada   (id_temporada),
+    INDEX idx_huesped     (id_huesped),
+    INDEX idx_ctx_huesped (id_contexto_huesped),
     INDEX idx_empresa     (id_empresa),
     INDEX idx_folio       (folio_titular),
     INDEX idx_ingreso     (ingreso_total),
@@ -163,6 +179,8 @@ CREATE TABLE Fact_Reservas (
     CONSTRAINT fk_canal       FOREIGN KEY (id_canal)       REFERENCES Dim_Canal(id_canal)           ON UPDATE CASCADE,
     CONSTRAINT fk_habitacion  FOREIGN KEY (id_habitacion)  REFERENCES Dim_Habitacion(id_habitacion) ON UPDATE CASCADE,
     CONSTRAINT fk_temporada   FOREIGN KEY (id_temporada)   REFERENCES Dim_Temporada(id_temporada)   ON UPDATE CASCADE,
+    CONSTRAINT fk_huesped     FOREIGN KEY (id_huesped)     REFERENCES Dim_Huesped(id_registro_huesped) ON UPDATE CASCADE,
+    CONSTRAINT fk_ctx_huesped FOREIGN KEY (id_contexto_huesped) REFERENCES Dim_Contexto_Huesped(id_contexto_huesped) ON UPDATE CASCADE,
     CONSTRAINT fk_empresa     FOREIGN KEY (id_empresa)     REFERENCES Dim_Empresa(id_empresa)       ON UPDATE CASCADE
 
 ) ENGINE=InnoDB COMMENT='Hechos: 70,882 reservas Jun 2020 - Abr 2026';
@@ -224,9 +242,10 @@ SELECT 'Dim_Segmento',              COUNT(*)         FROM Dim_Segmento  UNION AL
 SELECT 'Dim_Canal',                 COUNT(*)         FROM Dim_Canal     UNION ALL
 SELECT 'Dim_Habitacion',            COUNT(*)         FROM Dim_Habitacion UNION ALL
 SELECT 'Dim_Huesped',               COUNT(*)         FROM Dim_Huesped   UNION ALL
+SELECT 'Dim_Contexto_Huesped',      COUNT(*)         FROM Dim_Contexto_Huesped UNION ALL
 SELECT 'Dim_Empresa',               COUNT(*)         FROM Dim_Empresa   UNION ALL
 SELECT 'Dim_Temporada',             COUNT(*)         FROM Dim_Temporada UNION ALL
 SELECT 'Fact_Reservas',             COUNT(*)         FROM Fact_Reservas;
 
 -- FIN DEL SCRIPT
--- Orden carga ETL: Dim_Fecha > Dim_Segmento > Dim_Canal > Dim_Habitacion > Dim_Huesped > Dim_Empresa > Dim_Temporada > Fact_Reservas
+-- Orden carga ETL: Dim_Fecha > Dim_Segmento > Dim_Canal > Dim_Habitacion > Dim_Huesped > Dim_Contexto_Huesped > Dim_Empresa > Dim_Temporada > Fact_Reservas

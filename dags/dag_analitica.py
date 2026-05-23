@@ -36,12 +36,12 @@ MYSQL_ENV = (
 
 def _crear_schema():
     """
-    Crea la base de datos hotel_dann_dw si no existe y ejecuta el DDL de tablas.
+    Crea la base de datos hotel_dann_dw si no existe y ejecuta el DDL de tablas y vistas.
 
     Estrategia idempotente:
       1. Conecta SIN base de datos -> CREATE DATABASE IF NOT EXISTS
-      2. Conecta CON base -> extrae solo CREATE TABLE via regex (ignora
-         DROP/CREATE DATABASE y USE del DDL que son para MySQL Workbench)
+        2. Conecta CON base -> extrae solo CREATE TABLE / CREATE VIEW del DDL
+            (ignora DROP/CREATE DATABASE y USE que son para MySQL Workbench)
     """
     import sys
 
@@ -83,10 +83,18 @@ def _crear_schema():
         if stmt.strip().upper().startswith("CREATE TABLE")
     ]
 
+    view_stmts = [
+        stmt.strip()
+        for stmt in ddl_sin_comentarios.split(";")
+        if stmt.strip().upper().startswith("CREATE OR REPLACE VIEW")
+        or stmt.strip().upper().startswith("CREATE VIEW")
+    ]
+
     if not table_stmts:
         raise ValueError(f"No se encontraron CREATE TABLE en {SQL_DDL}.")
 
     print(f"  Tablas a crear/verificar: {len(table_stmts)}")
+    print(f"  Vistas a crear/reemplazar: {len(view_stmts)}")
 
     with engine.begin() as conn:
         for stmt in table_stmts:
@@ -106,6 +114,20 @@ def _crear_schema():
                     print(f"  (ya existe) '{tabla}'")
                 else:
                     print(f"  WARN [{tabla}]: {err_str[:120]}")
+
+        for stmt in view_stmts:
+            stmt_clean = stmt.strip()
+            m = re.search(
+                r"CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+[`]?(\w+)[`]?(?:\s+AS)?",
+                stmt_clean,
+                re.IGNORECASE,
+            )
+            vista = m.group(1) if m else "?"
+            try:
+                conn.execute(text(stmt_clean))
+                print(f"  OK Vista '{vista}' creada/reemplazada.")
+            except Exception as e:
+                print(f"  WARN [vista:{vista}]: {str(e)[:120]}")
 
     engine.dispose()
     print("OK Schema hotel_dann_dw verificado en MySQL")

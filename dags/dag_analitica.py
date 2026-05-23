@@ -112,8 +112,8 @@ def _crear_schema():
 
 
 with DAG(
-    dag_id="etl_kimball_hotel_dann",
-    description="Pipeline ETL Kimball - Hotel Dann Monasterio",
+    dag_id="etl_kimball_reserva_hotelera",
+    description="Pipeline ETL Kimball - Reserva Hotelera",
     start_date=datetime(2025, 1, 1),
     schedule_interval=None,
     catchup=False,

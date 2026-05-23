@@ -28,7 +28,6 @@ RAW = (
 TABLE = "Fact_Reservas"
 
 MEDIDAS = [
-    "numvoucher",
     "tarifa",
     "valorplan",
     "ivaplan",

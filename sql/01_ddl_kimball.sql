@@ -143,9 +143,8 @@ CREATE TABLE Fact_Reservas (
     id_temporada           INT            NOT NULL DEFAULT 99,
     id_huesped             INT            NOT NULL DEFAULT 1,
     id_contexto_huesped    INT            NOT NULL,
-    id_empresa             INT            NOT NULL DEFAULT 9999,
 
-    -- Dimension degenerada
+    -- Dimension degenerada adicional
     folio_titular          VARCHAR(30)             COMMENT 'Folio titular de la reserva',
 
     -- Metricas monetarias (COP)
@@ -170,7 +169,6 @@ CREATE TABLE Fact_Reservas (
     INDEX idx_temporada   (id_temporada),
     INDEX idx_huesped     (id_huesped),
     INDEX idx_ctx_huesped (id_contexto_huesped),
-    INDEX idx_empresa     (id_empresa),
     INDEX idx_folio       (folio_titular),
     INDEX idx_ingreso     (ingreso_total),
 
@@ -180,8 +178,7 @@ CREATE TABLE Fact_Reservas (
     CONSTRAINT fk_habitacion  FOREIGN KEY (id_habitacion)  REFERENCES Dim_Habitacion(id_habitacion) ON UPDATE CASCADE,
     CONSTRAINT fk_temporada   FOREIGN KEY (id_temporada)   REFERENCES Dim_Temporada(id_temporada)   ON UPDATE CASCADE,
     CONSTRAINT fk_huesped     FOREIGN KEY (id_huesped)     REFERENCES Dim_Huesped(id_registro_huesped) ON UPDATE CASCADE,
-    CONSTRAINT fk_ctx_huesped FOREIGN KEY (id_contexto_huesped) REFERENCES Dim_Contexto_Huesped(id_contexto_huesped) ON UPDATE CASCADE,
-    CONSTRAINT fk_empresa     FOREIGN KEY (id_empresa)     REFERENCES Dim_Empresa(id_empresa)       ON UPDATE CASCADE
+    CONSTRAINT fk_ctx_huesped FOREIGN KEY (id_contexto_huesped) REFERENCES Dim_Contexto_Huesped(id_contexto_huesped) ON UPDATE CASCADE
 
 ) ENGINE=InnoDB COMMENT='Hechos: 70,882 reservas Jun 2020 - Abr 2026';
 

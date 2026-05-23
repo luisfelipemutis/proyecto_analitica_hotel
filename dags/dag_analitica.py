@@ -106,23 +106,6 @@ def _crear_schema():
                 else:
                     print(f"  WARN [{tabla}]: {err_str[:120]}")
 
-    # PASO 3: ALTER TABLE para evoluciones de schema (idempotente).
-    # Si una columna ya tiene el tipo correcto, MySQL lo acepta sin error.
-    # Se aplica SOLO a cambios de tamaño/tipo que no destruyen datos.
-    ALTER_STMTS = [
-        # Dim_Habitacion: ampliar descripcion_tipo de VARCHAR(60) a VARCHAR(350)
-        "ALTER TABLE Dim_Habitacion MODIFY COLUMN descripcion_tipo VARCHAR(350) NOT NULL COMMENT 'Descripcion completa del tipo de suite'",
-    ]
-    with engine.begin() as conn:
-        for alter in ALTER_STMTS:
-            try:
-                conn.execute(text(alter))
-                m = re.search(r"ALTER TABLE\s+(\w+)", alter, re.IGNORECASE)
-                tabla = m.group(1) if m else "?"
-                print(f"  OK ALTER TABLE '{tabla}' aplicado.")
-            except Exception as e:
-                print(f"  WARN ALTER: {str(e)[:120]}")
-
     engine.dispose()
     print("OK Schema hotel_dann_dw verificado en MySQL")
 
@@ -190,6 +173,14 @@ with DAG(
                 f"cd {PROJECT} && "
                 f"PYTHONPATH={PYTHONPATH_ETL} {MYSQL_ENV} "
                 f"python {SRC}/etl_dim_huesped.py"
+            ),
+        )
+        dim_empresa = BashOperator(
+            task_id="dim_empresa",
+            bash_command=(
+                f"cd {PROJECT} && "
+                f"PYTHONPATH={PYTHONPATH_ETL} {MYSQL_ENV} "
+                f"python {SRC}/etl_dim_empresa.py"
             ),
         )
 

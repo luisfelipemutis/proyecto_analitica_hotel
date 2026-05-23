@@ -67,19 +67,11 @@ CREATE TABLE Dim_Canal (
     id_canal       INT         NOT NULL AUTO_INCREMENT,
     codigo_canal   VARCHAR(10) NOT NULL,
     nombre_canal   VARCHAR(100)NOT NULL,
-    tipo_canal     VARCHAR(30) NOT NULL COMMENT 'OTA|Directo Digital|Directo Presencial|Corporativo|Agencia',
+    tipo_canal     VARCHAR(30) NOT NULL,
     es_online      TINYINT(1)  NOT NULL DEFAULT 0,
     PRIMARY KEY (id_canal),
     UNIQUE KEY uq_canal_cod (codigo_canal)
 ) ENGINE=InnoDB;
-
-INSERT INTO Dim_Canal (codigo_canal, nombre_canal, tipo_canal, es_online) VALUES
-('RECE', 'Recepcion Directa',       'Directo Presencial', 0),
-('HDAN', 'Hotel Dann Portal Web',   'Directo Digital',    1),
-('BKNG', 'Booking.com',             'OTA',                1),
-('CORP', 'Canal Corporativo',       'Corporativo',        0),
-('AGCY', 'Agencias de Viaje',       'Agencia',            0),
-('EXPE', 'Expedia',                 'OTA',                1);
 
 -- =============================================================================
 -- 4. Dim_Habitacion

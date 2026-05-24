@@ -267,6 +267,13 @@ def cargar_maps(engine) -> dict:
                 text("SELECT tipo_hab, id_habitacion FROM Dim_Habitacion")
             )
         }
+        maps["empresa"] = {
+            str(r[0]).strip().title(): r[1]
+            for r in conn.execute(
+                text("SELECT nombre_empresa, id_empresa FROM Dim_Empresa")
+            )
+            if r[0] is not None
+        }
         maps["temp"] = {
             r[0]: r[1]
             for r in conn.execute(
@@ -308,6 +315,17 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
     df["id_segmento"] = df.get("codsegmento", pd.Series(dtype=object)).map(maps["seg"])
     df["id_canal"] = df.get("codiga_age", pd.Series(dtype=object)).map(maps["canal"])
     df["id_habitacion"] = df.get("tiphab_tip", pd.Series(dtype=object)).map(maps["hab"])
+    empresa_key = (
+        df.get("nombre_emp", pd.Series(dtype=object))
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\s+", " ", regex=True)
+        .str.title()
+    )
+    df["id_empresa"] = empresa_key.map(maps.get("empresa", {}))
+    df.loc[empresa_key.eq(""), "id_empresa"] = pd.NA
+
     df["id_temporada"] = df.get("codigotemporada", pd.Series(dtype=object)).map(
         maps["temp"]
     )
@@ -430,6 +448,7 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
         "id_segmento",
         "id_canal",
         "id_habitacion",
+        "id_empresa",
         "id_temporada",
         "id_huesped",
         "id_contexto_huesped",
@@ -464,6 +483,10 @@ def transformar(df: pd.DataFrame, maps: dict) -> pd.DataFrame:
     # Cast a entero ahora que no hay NaN en las columnas FK
     for col in fks_criticas:
         fact[col] = fact[col].astype(int)
+
+    # id_empresa es FK opcional: se conserva NULL cuando no aplica empresa.
+    if "id_empresa" in fact.columns:
+        fact["id_empresa"] = pd.to_numeric(fact["id_empresa"], errors="coerce").astype("Int64")
 
     fact.insert(0, "id_reserva", range(1, len(fact) + 1))
     print(f"  ✅ Registros validos para insertar: {len(fact):,} / {antes:,}")

@@ -129,6 +129,23 @@ def _crear_schema():
             except Exception as e:
                 print(f"  WARN [vista:{vista}]: {str(e)[:120]}")
 
+    # PASO 4: Vaciar Fact_Reservas ANTES de que los ETLs de dimensiones
+    # ejecuten sus DELETE. Fact_Reservas tiene FK constraints hacia todas las
+    # dimensiones; si hay registros en la tabla de hechos referenciando una
+    # dimensión, MySQL lanza ERROR 1451 al intentar borrar esa dimensión.
+    # Estrategia idempotente correcta en Kimball:
+    #   (a) vaciar hechos → (b) recargar dims → (c) recargar hechos
+    with engine.begin() as conn:
+        try:
+            result = conn.execute(text("SELECT COUNT(*) FROM Fact_Reservas"))
+            n_antes = result.scalar()
+            conn.execute(text("DELETE FROM Fact_Reservas"))
+            print(f"  OK Fact_Reservas vaciada: {n_antes:,} registros eliminados.")
+            print("  Las dimensiones pueden recargarse sin violaciones de FK.")
+        except Exception as e:
+            # La tabla puede no existir en la primera ejecución — no es error.
+            print(f"  INFO vaciado Fact_Reservas: {str(e)[:120]}")
+
     engine.dispose()
     print("OK Schema hotel_dann_dw verificado en MySQL")
 
@@ -224,4 +241,6 @@ with DAG(
         ),
     )
 
+    # Orden de ejecución:
+    # crear_schema (incluye vaciado de Fact_Reservas) → dims (paralelo) → fact_reservas
     crear_schema >> dims_group >> fact_reservas
